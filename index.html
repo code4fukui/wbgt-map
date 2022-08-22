@@ -1,0 +1,94 @@
+<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
+<title>今日の暑さ予測マップ - 環境省暑さ指数(WBGT予測)より</title>
+</head><body>
+
+<h1>今日の暑さ予測マップ</h1>
+<div id=err></div>
+<div id="divmap" style="height:80vh"></div>
+
+<div id="credit">
+  <a href=https://www.wbgt.env.go.jp/wbgt_data.php>環境省熱中症予防情報サイト 暑さ指数</a>
+→ <a href=https://github.com/code4fukui/wbgt-japan/>code4fukui/wbgt-japan</a>
+(<a href=https://github.com/code4fukui/wbgt-map>src on GitHub</a>)
+</div>
+
+<script type="module">
+import { LeafletGSI } from "https://js.sabae.cc/LeafletGSI.js";
+import { CSV } from "https://js.sabae.cc/CSV.js";
+import { Day } from "https://js.sabae.cc/DateTime.js";
+
+const map = await LeafletGSI.initMap("divmap");
+
+const urlwbgt = "https://code4fukui.github.io/wbgt-japan/data/yohou_data.csv";
+const urlstation = "https://code4fukui.github.io/jma_station/jma_station_active.csv";
+
+const stations = CSV.toJSON(await CSV.fetch(urlstation));
+const wbgts = CSV.toJSON(await CSV.fetch(urlwbgt));
+
+const getWBGTMean = (wbgt) => {
+  // const colors = ["blue", "green", "orange", "yellow", "red", "purple", "violet"];
+  if (wbgt === null) {
+    return { color: "violet", desc: "値なし" };
+  }
+  if (wbgt < 21) {
+    return { color: "blue", desc: "ほぼ安全" };
+  } else if (wbgt < 25) {
+    return { color: "green", desc: "注意" };
+  } else if (wbgt < 28) {
+    return { color: "yellow", desc: "警戒" };
+  } else if (wbgt < 31) {
+    return { color: "orange", desc: "厳重警戒" };
+  }
+  return { color: "red", desc: "危険" };
+};
+
+const getWBGTToday = (stnum) => {
+  const d = wbgts.find(d => d["Station Number"] == stnum);
+  if (!d) {
+    return { wbgt: null, hour: null };
+  }
+  const today = new Day().toStringYMD();
+  //const today = "20220909";
+  let max = -100;
+  let hour = null;
+  for (const n in d) {
+    if (n.startsWith(today)) {
+      if (d[n] > max) {
+        max = d[n];
+        hour = n.substring(8);
+      }
+    }
+  }
+  if (max == -100) {
+    return { wbgt: null, hour: null };
+  }
+  return { wbgt: max, hour: hour };
+};
+
+const lls = [];
+for (const st of stations) {
+  const lat = st["Latitude_Precipitation(degree)"];
+  const lng = st["Longitude_Precipitation(degree)"];
+  const stnum = st["Station Number"];
+  const wbgt = getWBGTToday(stnum);
+  if (wbgt.wbgt === null) {
+    //console.log("not found: ", stnum);
+    continue;
+  }
+  const mean = getWBGTMean(wbgt.wbgt);
+  const pos = [lat, lng];
+  const marker = L.marker(pos, { icon: L.spriteIcon(mean.color)});
+  marker.bindPopup(`本日最高予測WBGT: ${wbgt.wbgt}<br>${mean.desc}`);
+  marker.addTo(map);
+  lls.push(pos);
+}
+if (lls.length == 0) {
+  map.setView([35.9565, 136.1842], 5);
+  err.textContent = "暑さ指数データがありませんでした";
+} else {
+  map.fitBounds(lls);
+}
+
+</script>
+</body>
+</html>
